@@ -1,0 +1,6 @@
+/_build/
+/dist/
+/logs/
+/node_modules/
+erl_crash.dump
+rebar.lock

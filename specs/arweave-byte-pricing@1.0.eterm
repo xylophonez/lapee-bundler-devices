@@ -1,0 +1,14 @@
+#{
+    <<"data-protocol">> => <<"ao">>,
+    <<"type">> => <<"Device-Spec">>,
+    <<"name">> => <<"arweave-byte-pricing@1.0">>,
+    <<"exports">> => [<<"estimate">>, <<"price">>, <<"quote">>],
+    <<"summary">> =>
+        <<"P4 pricing adapter that prices Arweave byte usage in AO base units "
+          "using gateway byte prices and oracle AR/AO USD prices.">>,
+    <<"configuration">> => #{
+        <<"arweave-byte-price">> => <<"Fixed byte price or dynamic.">>,
+        <<"oracle-device">> => <<"Device spec id for simple-oracle@1.0.">>,
+        <<"metering-device">> => <<"Metering device, normally metering@1.0.">>
+    }
+}.

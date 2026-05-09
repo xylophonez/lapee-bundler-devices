@@ -1,0 +1,15 @@
+#{
+    <<"data-protocol">> => <<"ao">>,
+    <<"type">> => <<"Device-Spec">>,
+    <<"name">> => <<"bundler-settlement@1.0">>,
+    <<"exports">> => [<<"bundled-message-complete">>, <<"bundle-complete">>],
+    <<"summary">> =>
+        <<"Bundler completion hook that settles metered upload fees from the "
+          "uploader account to the configured beneficiary.">>,
+    <<"configuration">> => #{
+        <<"ledger-device">> => <<"Device spec id for process-ledger@1.0.">>,
+        <<"pricing-device">> => <<"Device spec id for arweave-byte-pricing@1.0.">>,
+        <<"settlement-account">> => <<"Account to debit.">>,
+        <<"beneficiary">> => <<"Account to credit.">>
+    }
+}.

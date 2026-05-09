@@ -1,0 +1,15 @@
+#{
+    <<"load-remote-devices">> => true,
+    <<"trusted-device-signers">> => [<<"SIGNER_ADDRESS">>],
+
+    %% Optional aliases. These keep friendly device names available without
+    %% editing upstream hb_opts.
+    preloaded_devices => [
+        #{<<"name">> => <<"ao-payment@1.0">>, <<"module">> => <<"AO_PAYMENT_SPEC_ID">>},
+        #{<<"name">> => <<"arweave-byte-pricing@1.0">>, <<"module">> => <<"ARWEAVE_BYTE_PRICING_SPEC_ID">>},
+        #{<<"name">> => <<"bundler-settlement@1.0">>, <<"module">> => <<"BUNDLER_SETTLEMENT_SPEC_ID">>},
+        #{<<"name">> => <<"pricing-router@1.0">>, <<"module">> => <<"PRICING_ROUTER_SPEC_ID">>},
+        #{<<"name">> => <<"process-ledger@1.0">>, <<"module">> => <<"PROCESS_LEDGER_SPEC_ID">>},
+        #{<<"name">> => <<"simple-oracle@1.0">>, <<"module">> => <<"SIMPLE_ORACLE_SPEC_ID">>}
+    ]
+}.

@@ -1,0 +1,14 @@
+#{
+    <<"data-protocol">> => <<"ao">>,
+    <<"type">> => <<"Device-Spec">>,
+    <<"name">> => <<"simple-oracle@1.0">>,
+    <<"exports">> => [<<"price">>, <<"price-now">>],
+    <<"summary">> =>
+        <<"Ticker-to-current-USD-price oracle that averages valid source "
+          "endpoint responses and tolerates partial source failure.">>,
+    <<"configuration">> => #{
+        <<"oracle-sources">> => <<"Ticker keyed source list.">>,
+        <<"oracle-days">> => <<"Dynamic historical window size.">>,
+        <<"oracle-cache-ttl-ms">> => <<"In-memory price cache TTL.">>
+    }
+}.

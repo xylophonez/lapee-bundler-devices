@@ -1,0 +1,14 @@
+{
+  "name": "lapee-devices",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "publish:up": "node scripts/publish_to_up_arweave.cjs"
+  },
+  "dependencies": {
+    "@ar.io/sdk": "^3.18.0",
+    "@ardrive/turbo-sdk": "^1.37.0",
+    "@dha-team/arbundles": "^1.0.4"
+  }
+}

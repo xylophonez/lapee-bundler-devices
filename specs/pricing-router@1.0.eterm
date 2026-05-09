@@ -1,0 +1,13 @@
+#{
+    <<"data-protocol">> => <<"ao">>,
+    <<"type">> => <<"Device-Spec">>,
+    <<"name">> => <<"pricing-router@1.0">>,
+    <<"exports">> => [<<"estimate">>, <<"price">>],
+    <<"summary">> =>
+        <<"Routes P4 pricing calls to a route-specific pricing device while "
+          "leaving other routes on a default pricing device.">>,
+    <<"configuration">> => #{
+        <<"pricing-routes">> => <<"List of router templates and pricing devices.">>,
+        <<"default-pricing-device">> => <<"Fallback pricing device.">>
+    }
+}.

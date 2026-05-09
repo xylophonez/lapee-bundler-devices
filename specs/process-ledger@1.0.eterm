@@ -1,0 +1,11 @@
+#{
+    <<"data-protocol">> => <<"ao">>,
+    <<"type">> => <<"Device-Spec">>,
+    <<"name">> => <<"process-ledger@1.0">>,
+    <<"exports">> => [<<"balance">>, <<"charge">>],
+    <<"summary">> =>
+        <<"P4 ledger adapter for an AO-Core process-backed ledger.">>,
+    <<"configuration">> => #{
+        <<"ledger-path">> => <<"HyperPATH to the local ledger process.">>
+    }
+}.
