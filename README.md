@@ -43,6 +43,30 @@ Optional environment:
 The script writes `dist/device-manifest.eterm` and `dist/device-manifest.json`.
 Use the manifest signer in `trusted-device-signers`.
 
+## Local LapEE Node Script
+
+`scripts/start-bulbasaur.sh` starts a local LapEE/Bulbasaur node from a
+HyperBEAM checkout and uses this repo as the device package source:
+
+```sh
+cd /home/fn/Dev/hb_nodes/lapee-devices-clean
+HYPERBEAM_DIR=/home/fn/Dev/hb_nodes/bulbasaur \
+HB_KEY=/home/fn/Dev/hb_nodes/bulbasaur/bulbasaur-wallet.json \
+./scripts/start-bulbasaur.sh
+```
+
+Useful environment:
+
+- `HYPERBEAM_DIR`: HyperBEAM checkout to run. Defaults to `../bulbasaur`.
+- `BULBASAUR_DEVICE_DIR` / `LAPEE_DEVICE_DIR`: device package repo. Defaults to this repo.
+- `HB_PORT`: node port. Defaults to `8734`.
+- `HB_KEY`: node wallet path. Defaults to `bulbasaur-wallet.json` under `HYPERBEAM_DIR`.
+- `BULBASAUR_ARWEAVE_COPYCAT_MODE`: defaults to `mempool-sender`; set `block`
+  for older HyperBEAM checkouts without mempool copycat support.
+- `BULBASAUR_ARWEAVE_COPYCAT_PATH`: explicit copycat path override.
+- `BULBASAUR_ARWEAVE_BLOCK_COPYCAT_INTERVAL`: interval such as `5-minutes`, or
+  `false` / `0` to disable the worker.
+
 ## Runtime Wiring
 
 The LapEE node only needs remote device loading enabled, the package signer
