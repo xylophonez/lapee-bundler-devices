@@ -7,7 +7,7 @@
 %%% mainnet state before scheduling a local `Credit-Notice' into the configured
 %%% ledger process.
 -module(dev_aopayment).
--export([ingest/3, verify/3]).
+-export([ingest/3, verify/3, withdraw/3]).
 -include("include/hb.hrl").
 
 -ifdef(TEST).
@@ -16,6 +16,7 @@
 
 -define(DEFAULT_AO_TOKEN, <<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>).
 -define(DEFAULT_MAINNET_URL, <<"https://state.forward.computer">>).
+-define(DEFAULT_MU_URL, <<"https://mu.ao-testnet.xyz">>).
 
 %% @doc Verify and import an AO token payment into the local ledger.
 ingest(Base, Req, NodeMsg) ->
@@ -36,6 +37,37 @@ ingest(Base, Req, NodeMsg) ->
                         NodeMsg#{ <<"ao-payment-imports">> => NewImports }
                     ),
                     {ok, Payment#{ <<"status">> => <<"imported">> }}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Submit a real AO transfer from the node wallet to the configured
+%% beneficiary. This is guarded by a boot-generated secret so the route is not
+%% an arbitrary signing endpoint when exposed over HTTP.
+withdraw(Base, Req, NodeMsg) ->
+    case validate_withdrawal(Base, Req, NodeMsg) of
+        {ok, Withdrawal} ->
+            Key = withdrawal_key(Withdrawal),
+            Withdrawals = hb_opts:get(ao_payment_withdrawals, #{}, NodeMsg),
+            case maps:find(Key, Withdrawals) of
+                {ok, Existing} ->
+                    {ok, Existing#{ <<"status">> => <<"already-submitted">> }};
+                error ->
+                    case submit_withdrawal(Withdrawal, NodeMsg) of
+                        {ok, Result} ->
+                            Stored = Result#{ <<"status">> => <<"submitted">> },
+                            hb_http_server:set_opts(
+                                #{},
+                                NodeMsg#{
+                                    <<"ao-payment-withdrawals">> =>
+                                        Withdrawals#{ Key => Stored }
+                                }
+                            ),
+                            {ok, Stored};
+                        Error ->
+                            Error
+                    end
             end;
         Error ->
             Error
@@ -250,20 +282,7 @@ credit_to_payment(CreditMsg, Expected, NodeMsg) ->
     end.
 
 import_payment(Payment, NodeMsg) ->
-    Wallet =
-        case hb_opts:get(priv_wallet, not_found, NodeMsg) of
-            not_found ->
-                hb:wallet(hb_opts:get(priv_key_location, <<"hyperbeam-key.json">>, NodeMsg));
-            FoundWallet ->
-                FoundWallet
-        end,
-    Operator = hb_util:human_id(ar_wallet:to_address(Wallet)),
-    Opts = NodeMsg#{
-        priv_wallet => Wallet,
-        <<"priv-wallet">> => Wallet,
-        operator => Operator,
-        <<"operator">> => Operator
-    },
+    Opts = wallet_opts(NodeMsg),
     Ledger = hb_maps:get(<<"ledger">>, Payment, undefined, NodeMsg),
     LedgerRoute = <<"/", Ledger/binary, "~process@1.0">>,
     CreditNotice =
@@ -289,6 +308,203 @@ import_payment(Payment, NodeMsg) ->
             Opts
         ),
     ok.
+
+validate_withdrawal(Base, Req, NodeMsg) ->
+    ExpectedSecret = withdraw_secret(NodeMsg),
+    SuppliedSecret =
+        hb_ao:get(<<"withdraw-secret">>, Req, undefined, NodeMsg),
+    case ExpectedSecret of
+        undefined ->
+            withdraw_error(403, <<"AO payment withdrawals are not enabled.">>);
+        SuppliedSecret ->
+            validate_withdrawal_fields(Base, Req, NodeMsg);
+        _ ->
+            withdraw_error(403, <<"Invalid AO payment withdrawal secret.">>)
+    end.
+
+validate_withdrawal_fields(Base, Req, NodeMsg) ->
+    Token =
+        hb_ao:get(
+            <<"token">>,
+            Req,
+            hb_maps:get(
+                <<"token">>,
+                Base,
+                hb_opts:get(ao_payment_token, ?DEFAULT_AO_TOKEN, NodeMsg),
+                NodeMsg
+            ),
+            NodeMsg
+        ),
+    Recipient = hb_ao:get(<<"recipient">>, Req, undefined, NodeMsg),
+    Quantity0 = hb_ao:get(<<"quantity">>, Req, undefined, NodeMsg),
+    WithdrawID = hb_ao:get(<<"withdraw-id">>, Req, undefined, NodeMsg),
+    case {Recipient, parse_positive_quantity(Quantity0)} of
+        {undefined, _} ->
+            withdraw_error(400, <<"Missing withdrawal recipient.">>);
+        {_, {error, _}} ->
+            withdraw_error(400, <<"Invalid withdrawal quantity.">>);
+        {_, {ok, Quantity}} ->
+            AllowedRecipient = allowed_withdraw_recipient(Base, NodeMsg),
+            case AllowedRecipient =:= undefined
+                orelse hb_util:human_id(AllowedRecipient) =:=
+                    hb_util:human_id(Recipient)
+            of
+                true ->
+                    {ok, #{
+                        <<"token">> => hb_util:human_id(Token),
+                        <<"recipient">> => hb_util:human_id(Recipient),
+                        <<"quantity">> => Quantity,
+                        <<"withdraw-id">> => WithdrawID,
+                        <<"mu-url">> => mu_url(Base, NodeMsg)
+                    }};
+                false ->
+                    withdraw_error(
+                        403,
+                        <<"Withdrawal recipient does not match configured beneficiary.">>
+                    )
+            end
+    end.
+
+withdraw_secret(NodeMsg) ->
+    hb_private:get(
+        <<"ao-payment-withdraw-secret">>,
+        NodeMsg,
+        hb_private:get(<<"withdraw-secret">>, NodeMsg, undefined, NodeMsg),
+        NodeMsg
+    ).
+
+allowed_withdraw_recipient(Base, NodeMsg) ->
+    hb_opts:get(
+        ao_payment_withdraw_recipient,
+        hb_maps:get(<<"withdraw-recipient">>, Base, undefined, NodeMsg),
+        NodeMsg
+    ).
+
+parse_positive_quantity(undefined) ->
+    {error, missing};
+parse_positive_quantity(Quantity0) ->
+    try hb_util:int(Quantity0) of
+        Quantity when Quantity > 0 -> {ok, Quantity};
+        _ -> {error, invalid}
+    catch
+        _:_ -> {error, invalid}
+    end.
+
+submit_withdrawal(Withdrawal, NodeMsg) ->
+    Opts = wallet_opts(NodeMsg),
+    Token = hb_maps:get(<<"token">>, Withdrawal, ?DEFAULT_AO_TOKEN, NodeMsg),
+    Recipient = hb_maps:get(<<"recipient">>, Withdrawal, undefined, NodeMsg),
+    Quantity = hb_maps:get(<<"quantity">>, Withdrawal, undefined, NodeMsg),
+    Msg =
+        hb_message:commit(
+            #{
+                <<"target">> => Token,
+                <<"data">> => <<" ">>,
+                <<"Variant">> => <<"ao.TN.1">>,
+                <<"Type">> => <<"Message">>,
+                <<"Action">> => <<"Transfer">>,
+                <<"Recipient">> => Recipient,
+                <<"Quantity">> => hb_util:bin(Quantity),
+                <<"Content-Type">> => <<"text/plain">>,
+                <<"SDK">> => <<"hyperbeam-lapee">>
+            },
+            Opts,
+            <<"ans104@1.0">>
+        ),
+    MessageID = hb_message:id(Msg, signed, Opts),
+    case dev_codec_ans104:serialize(Msg, #{}, Opts) of
+        {ok, Raw} ->
+            case post_mu(hb_maps:get(<<"mu-url">>, Withdrawal, ?DEFAULT_MU_URL, NodeMsg), Raw) of
+                {ok, MuResult} ->
+                    {ok, #{
+                        <<"message-id">> => MessageID,
+                        <<"token">> => Token,
+                        <<"recipient">> => Recipient,
+                        <<"quantity">> => Quantity,
+                        <<"mu-response">> => MuResult
+                    }};
+                {error, Reason} ->
+                    withdraw_fetch_error(Reason)
+            end;
+        {error, Reason} ->
+            withdraw_fetch_error(Reason)
+    end.
+
+post_mu(MuURL0, Raw) ->
+    MuURL = normalize_url(MuURL0),
+    Request = {
+        binary_to_list(MuURL),
+        [
+            {"content-type", "application/octet-stream"},
+            {"accept", "application/json"}
+        ],
+        "application/octet-stream",
+        Raw
+    },
+    case httpc:request(post, Request, [], [{body_format, binary}]) of
+        {ok, {{_, Status, _}, _Headers, Body}} when Status >= 200, Status < 300 ->
+            {ok, decode_json_or_body(Body)};
+        {ok, {{_, Status, _}, _Headers, Body}} ->
+            {error, {http_status, Status, Body}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+decode_json_or_body(Body) ->
+    try hb_json:decode(Body)
+    catch _:_ -> Body
+    end.
+
+mu_url(Base, NodeMsg) ->
+    hb_maps:get(
+        <<"mu-url">>,
+        Base,
+        hb_opts:get(ao_payment_mu_url, ?DEFAULT_MU_URL, NodeMsg),
+        NodeMsg
+    ).
+
+normalize_url(URL0) ->
+    URL = hb_util:bin(URL0),
+    case binary:last(URL) of
+        $/ -> binary:part(URL, 0, byte_size(URL) - 1);
+        _ -> URL
+    end.
+
+withdrawal_key(Withdrawal) ->
+    case hb_maps:get(<<"withdraw-id">>, Withdrawal, undefined, #{}) of
+        undefined ->
+            <<(hb_maps:get(<<"token">>, Withdrawal, undefined, #{}))/binary, ":",
+                (hb_maps:get(<<"recipient">>, Withdrawal, undefined, #{}))/binary, ":",
+                (hb_util:bin(hb_maps:get(<<"quantity">>, Withdrawal, undefined, #{})))/binary>>;
+        WithdrawID ->
+            hb_util:bin(WithdrawID)
+    end.
+
+withdraw_error(Status, Body) ->
+    {error, #{ <<"status">> => Status, <<"body">> => Body }}.
+
+withdraw_fetch_error(Reason) ->
+    {error, #{
+        <<"status">> => 502,
+        <<"body">> => <<"Unable to submit AO withdrawal to message unit.">>,
+        <<"reason">> => format_reason(Reason)
+    }}.
+
+wallet_opts(NodeMsg) ->
+    Wallet =
+        case hb_opts:get(priv_wallet, not_found, NodeMsg) of
+            not_found ->
+                hb:wallet(hb_opts:get(priv_key_location, <<"hyperbeam-key.json">>, NodeMsg));
+            FoundWallet ->
+                FoundWallet
+        end,
+    Operator = hb_util:human_id(ar_wallet:to_address(Wallet)),
+    NodeMsg#{
+        priv_wallet => Wallet,
+        <<"priv-wallet">> => Wallet,
+        operator => Operator,
+        <<"operator">> => Operator
+    }.
 
 local_node(NodeMsg) ->
     hb_opts:get(

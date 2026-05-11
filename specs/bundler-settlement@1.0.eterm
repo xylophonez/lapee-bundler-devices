@@ -5,11 +5,17 @@
     <<"exports">> => [<<"bundled-message-complete">>, <<"bundle-complete">>],
     <<"summary">> =>
         <<"Bundler completion hook that settles metered upload fees from the "
-          "uploader account to the configured beneficiary.">>,
+          "uploader account and optionally withdraws real AO to the "
+          "configured beneficiary.">>,
     <<"configuration">> => #{
         <<"ledger-device">> => <<"Device spec id for process-ledger@1.0.">>,
         <<"pricing-device">> => <<"Device spec id for arweave-byte-pricing@1.0.">>,
         <<"settlement-account">> => <<"Account to debit.">>,
-        <<"beneficiary">> => <<"Account to credit.">>
+        <<"beneficiary">> => <<"Real AO withdrawal recipient.">>,
+        <<"withdraw">> => <<"Enable AO withdrawal after local settlement.">>,
+        <<"withdraw-device">> => <<"Device spec id for ao-payment@1.0.">>,
+        <<"withdraw-token">> => <<"AO token process id.">>,
+        <<"withdraw-secret">> => <<"Node-local withdrawal guard.">>,
+        <<"withdrawal-account">> => <<"Local ledger sink for settled funds.">>
     }
 }.

@@ -2,14 +2,18 @@
     <<"data-protocol">> => <<"ao">>,
     <<"type">> => <<"Device-Spec">>,
     <<"name">> => <<"ao-payment@1.0">>,
-    <<"exports">> => [<<"ingest">>, <<"verify">>],
+    <<"exports">> => [<<"ingest">>, <<"verify">>, <<"withdraw">>],
     <<"summary">> =>
-        <<"Verifies AO token payment notices and imports accepted payments into "
-          "a configured local ledger process.">>,
+        <<"Verifies AO token payment notices, imports accepted payments into "
+          "a configured local ledger process, and submits guarded AO "
+          "withdrawals from the node wallet.">>,
     <<"configuration">> => #{
         <<"ao-payment-token">> => <<"AO token process id.">>,
         <<"ao-payment-ledger">> => <<"Local process ledger id.">>,
         <<"ao-payment-deposit-address">> => <<"Accepted payment recipient.">>,
-        <<"ao-payment-mainnet-url">> => <<"AO state endpoint.">>
+        <<"ao-payment-mainnet-url">> => <<"AO state endpoint.">>,
+        <<"ao-payment-mu-url">> => <<"AO message unit endpoint.">>,
+        <<"ao-payment-withdraw-secret">> => <<"Private node-local withdrawal guard.">>,
+        <<"ao-payment-withdraw-recipient">> => <<"Allowed withdrawal recipient.">>
     }
 }.
