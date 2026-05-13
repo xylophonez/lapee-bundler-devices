@@ -17,6 +17,7 @@ const DEVICES = [
   { name: "arweave-byte-pricing@1.0", root: "dev_arweave_byte_pricing" },
   { name: "bundler-settlement@1.0", root: "dev_bundler_settlement" },
   { name: "lapee-bundler-gc@1.0", root: "dev_lapee_bundler_gc" },
+  { name: "lapee-p4-bootstrap@1.0", root: "dev_lapee_p4_bootstrap" },
   { name: "pricing-router@1.0", root: "dev_pricing_router" },
   { name: "process-ledger@1.0", root: "dev_process_ledger" },
   { name: "simple-oracle@1.0", root: "dev_simple_oracle" },

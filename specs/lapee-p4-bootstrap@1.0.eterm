@@ -1,0 +1,20 @@
+#{
+    <<"data-protocol">> => <<"ao">>,
+    <<"type">> => <<"Device-Spec">>,
+    <<"name">> => <<"lapee-p4-bootstrap@1.0">>,
+    <<"exports">> => [<<"start">>],
+    <<"summary">> =>
+        <<"LapEE boot hook that derives the runtime operator payment profile, "
+          "installs the AO P4 ledger, and wires request/response/settlement "
+          "hooks for the AO-paid bundler.">>,
+    <<"configuration">> => #{
+        <<"bundler-beneficiary">> =>
+            <<"AO recipient for withdrawn bundling fees. Defaults to the "
+              "runtime operator address.">>,
+        <<"ao-payment-submit-url">> =>
+            <<"AO submit endpoint used by ao-payment withdrawal messages.">>,
+        <<"node-processes">> =>
+            <<"Existing node-process definitions to preserve while adding "
+              "the local ledger.">>
+    }
+}.

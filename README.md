@@ -10,6 +10,7 @@ devices are published as AO messages and loaded by spec ID from a trusted signer
 - `arweave-byte-pricing@1.0`
 - `bundler-settlement@1.0`
 - `lapee-bundler-gc@1.0`
+- `lapee-p4-bootstrap@1.0`
 - `pricing-router@1.0`
 - `process-ledger@1.0`
 - `simple-oracle@1.0`
@@ -88,6 +89,7 @@ trusted, and local aliases from public device names to spec IDs:
         #{<<"name">> => <<"arweave-byte-pricing@1.0">>, <<"module">> => <<"ARWEAVE_BYTE_PRICING_SPEC_ID">>},
         #{<<"name">> => <<"bundler-settlement@1.0">>, <<"module">> => <<"BUNDLER_SETTLEMENT_SPEC_ID">>},
         #{<<"name">> => <<"lapee-bundler-gc@1.0">>, <<"module">> => <<"LAPEE_BUNDLER_GC_SPEC_ID">>},
+        #{<<"name">> => <<"lapee-p4-bootstrap@1.0">>, <<"module">> => <<"LAPEE_P4_BOOTSTRAP_SPEC_ID">>},
         #{<<"name">> => <<"pricing-router@1.0">>, <<"module">> => <<"PRICING_ROUTER_SPEC_ID">>},
         #{<<"name">> => <<"process-ledger@1.0">>, <<"module">> => <<"PROCESS_LEDGER_SPEC_ID">>},
         #{<<"name">> => <<"simple-oracle@1.0">>, <<"module">> => <<"SIMPLE_ORACLE_SPEC_ID">>}

@@ -21,6 +21,7 @@ Devices = [
     #{ name => <<"arweave-byte-pricing@1.0">>, root => dev_arweave_byte_pricing },
     #{ name => <<"bundler-settlement@1.0">>, root => dev_bundler_settlement },
     #{ name => <<"lapee-bundler-gc@1.0">>, root => dev_lapee_bundler_gc },
+    #{ name => <<"lapee-p4-bootstrap@1.0">>, root => dev_lapee_p4_bootstrap },
     #{ name => <<"pricing-router@1.0">>, root => dev_pricing_router },
     #{ name => <<"process-ledger@1.0">>, root => dev_process_ledger },
     #{ name => <<"simple-oracle@1.0">>, root => dev_simple_oracle }
@@ -270,6 +271,70 @@ LoadAndSmoke =
                             Opts
                         ),
                     0 = hb_maps:get(<<"pending-items">>, Status, undefined, Opts),
+                    ok;
+                <<"lapee-p4-bootstrap@1.0">> ->
+                    NodeMsg = Opts#{
+                        <<"port">> => Port,
+                        <<"priv-wallet">> => Wallet,
+                        <<"bundler-beneficiary">> => Signer
+                    },
+                    {ok, #{ <<"body">> := Booted }} =
+                        hb_ao:resolve(
+                            #{ <<"device">> => SpecID },
+                            #{
+                                <<"path">> => <<"start">>,
+                                <<"body">> => NodeMsg
+                            },
+                            Opts
+                        ),
+                    Signer =
+                        hb_maps:get(
+                            <<"ao-payment-deposit-address">>,
+                            Booted,
+                            undefined,
+                            Booted
+                        ),
+                    Signer =
+                        hb_maps:get(
+                            <<"p4-recipient">>,
+                            Booted,
+                            undefined,
+                            Booted
+                        ),
+                    Signer =
+                        hb_maps:get(
+                            <<"ao-payment-withdraw-recipient">>,
+                            Booted,
+                            undefined,
+                            Booted
+                        ),
+                    {ok, _} = hb_maps:find(<<"ao-payment-ledger">>, Booted, Booted),
+                    {ok, _} =
+                        hb_maps:find(
+                            <<"ao-payment-withdraw-secret">>,
+                            hb_private:from_message(Booted),
+                            Booted
+                        ),
+                    On = hb_maps:get(<<"on">>, Booted, #{}, Booted),
+                    Complete =
+                        hb_maps:get(
+                            <<"bundled-message-complete">>,
+                            On,
+                            [],
+                            Booted
+                        ),
+                    true =
+                        lists:any(
+                            fun(Handler) ->
+                                hb_maps:get(
+                                    <<"device">>,
+                                    Handler,
+                                    undefined,
+                                    Booted
+                                ) =:= <<"lapee-bundler-gc@1.0">>
+                            end,
+                            Complete
+                        ),
                     ok;
                 <<"pricing-router@1.0">> ->
                     {ok, <<"routed">>} =
