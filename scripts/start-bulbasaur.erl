@@ -17,6 +17,8 @@ DeviceDir =
 DeviceSrcDir = filename:join(DeviceDir, "src").
 DeviceSpecDir = filename:join(DeviceDir, "specs").
 DeviceOutDir = filename:join([DeviceDir, "_build/default/packaged-devices"]).
+DeviceEbinDir = filename:join(DeviceOutDir, "ebin").
+code:add_patha(DeviceEbinDir).
 PluginEbins = [
     filename:join([DeviceDir, "_build/default/plugins/hb_device/ebin"]),
     filename:join([DeviceDir, "apps/hb_device/_build/default/lib/hb_device/ebin"])
@@ -301,27 +303,21 @@ PublishDevice =
             <<"spec-id">> => SpecID,
             <<"impl-id">> => hb_util:human_id(ImplID),
             <<"module">> => hb_util:bin(ModName),
+            <<"module-atom">> => ModName,
             <<"beam-file">> => hb_util:bin(BeamFile),
             <<"signer">> => Operator
         }
     end.
 
 PublishedDevices = [PublishDevice(Device) || Device <- Devices].
-DeviceNameResolver =
-    maps:from_list([
-        {maps:get(<<"name">>, Entry), maps:get(<<"spec-id">>, Entry)}
-    ||
-        Entry <- PublishedDevices
-    ]).
 NameResolvers =
-    [DeviceNameResolver |
-        hb_opts:get(name_resolvers, [], hb_opts:default_message())].
+    hb_opts:get(name_resolvers, [], hb_opts:default_message()).
 DefaultPreloadedDevices =
     hb_opts:get(preloaded_devices, [], hb_opts:default_message()),
 PackagedPreloadedDevices = [
     #{
         <<"name">> => maps:get(<<"name">>, Entry),
-        <<"module">> => maps:get(<<"spec-id">>, Entry)
+        <<"module">> => maps:get(<<"module-atom">>, Entry)
     }
 ||
     Entry <- PublishedDevices
@@ -369,6 +365,13 @@ Processor =
         ]
     }.
 
+RequestProcessor =
+    Processor#{
+        <<"device">> => <<"lapee-p4-bootstrap@1.0">>,
+        <<"p4-device">> => <<"p4@1.0">>,
+        <<"manifest-request">> => #{<<"device">> => <<"manifest@1.0">>}
+    }.
+
 BundlerSettlement =
     #{
         <<"device">> => <<"bundler-settlement@1.0">>,
@@ -401,6 +404,8 @@ P4NonChargableRoutes = [
     #{ <<"template">> => <<"/~query@1.0/*">> },
     #{ <<"template">> => <<"/graphql">> },
     #{ <<"template">> => <<"/schedule">> },
+    #{ <<"template">> => <<"/[A-Za-z0-9_-]+">> },
+    #{ <<"template">> => <<"/[A-Za-z0-9_-]+/*">> },
     #{ <<"template">> => <<"/[A-Za-z0-9_-]+/body">> }
 ].
 
@@ -511,12 +516,12 @@ OptsBase =
             <<"ledger">> => LedgerProcessID
         },
         on => #{
-            <<"request">> => Processor,
+            <<"request">> => RequestProcessor,
             <<"response">> => Processor,
             <<"bundled-message-complete">> => [BundlerSettlement, BundlerGC]
         },
         <<"on">> => #{
-            <<"request">> => Processor,
+            <<"request">> => RequestProcessor,
             <<"response">> => Processor,
             <<"bundled-message-complete">> => [BundlerSettlement, BundlerGC]
         }

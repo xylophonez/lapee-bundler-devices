@@ -6,7 +6,7 @@
 %%% process-ledger definition, and then enables the P4 request/response hooks.
 -module(dev_lapee_p4_bootstrap).
 -implements(<<"lapee-p4-bootstrap@1.0">>).
--export([info/1, start/3]).
+-export([info/1, start/3, request/3, response/3]).
 
 -include("include/hb.hrl").
 
@@ -15,13 +15,31 @@
 -define(LEDGER_PATH, <<"/ledger~node-process@1.0">>).
 
 info(_) ->
-    #{exports => [<<"start">>]}.
+    #{exports => [<<"start">>, <<"request">>, <<"response">>]}.
 
 start(_Base, #{<<"body">> := NodeMsg0}, _Opts) ->
     case configure(NodeMsg0) of
         {ok, NodeMsg} -> {ok, #{<<"body">> => NodeMsg}};
         Error -> Error
     end.
+
+%% @doc Single on-request handler for the LapEE paid bundler profile.
+%%
+%% P4 currently expects exactly one request hook when exposing balance through
+%% `~p4@1.0/balance'. LapEE also needs HyperBEAM's legacy manifest request hook
+%% for plain `/TXID[/path]' reads. This handler keeps P4 as the single visible
+%% request hook while applying manifest casting only to read requests for
+%% content-address paths.
+request(State, Raw, Opts) ->
+    case maybe_manifest_request(State, Raw, Opts) of
+        {ok, HookReq} ->
+            dev_p4:request(p4_state(State), HookReq, Opts);
+        Error ->
+            Error
+    end.
+
+response(State, Raw, Opts) ->
+    dev_p4:response(p4_state(State), Raw, Opts).
 
 configure(NodeMsg0) ->
     Address = node_address(NodeMsg0),
@@ -185,11 +203,7 @@ install_hooks(NodeMsg0, Address, Beneficiary, LedgerID) ->
             maps:get(<<"bundled-message-complete">>, On0, []),
             [Settlement, bundler_gc_hook()]
         ),
-    Request =
-        append_hook_handlers(
-            maps:get(<<"request">>, On0, []),
-            [Processor]
-        ),
+    Request = request_processor(maps:get(<<"request">>, On0, []), Processor),
     Response =
         append_hook_handlers(
             maps:get(<<"response">>, On0, []),
@@ -214,6 +228,95 @@ append_hook_handlers(Existing, NewHandlers) when is_list(Existing) ->
     Existing ++ NewHandlers;
 append_hook_handlers(Existing, NewHandlers) ->
     [Existing | NewHandlers].
+
+request_processor(ExistingRequest, Processor) ->
+    Base = Processor#{
+        <<"device">> => <<"lapee-p4-bootstrap@1.0">>,
+        <<"p4-device">> => <<"p4@1.0">>
+    },
+    case find_manifest_request(ExistingRequest) of
+        not_found -> Base;
+        ManifestRequest -> Base#{<<"manifest-request">> => ManifestRequest}
+    end.
+
+find_manifest_request(ExistingRequest) ->
+    find_manifest_request_1(hook_handlers(ExistingRequest)).
+
+find_manifest_request_1([]) ->
+    not_found;
+find_manifest_request_1([Handler = #{<<"device">> := <<"manifest@1.0">>} | _]) ->
+    Handler;
+find_manifest_request_1([_ | Rest]) ->
+    find_manifest_request_1(Rest).
+
+hook_handlers([]) ->
+    [];
+hook_handlers(Handler) when is_map(Handler) ->
+    [Handler];
+hook_handlers(Handlers) when is_list(Handlers) ->
+    Handlers;
+hook_handlers(_) ->
+    [].
+
+maybe_manifest_request(State, Raw, Opts) ->
+    case {manifest_request(State), should_manifest_request(Raw, Opts)} of
+        {false, _} ->
+            {ok, Raw};
+        {_, false} ->
+            {ok, Raw};
+        {ManifestRequest, true} ->
+            case dev_manifest:request(ManifestRequest, Raw, Opts) of
+                {error, #{<<"status">> := 404}} ->
+                    {ok, Raw};
+                Other ->
+                    Other
+            end
+    end.
+
+manifest_request(State) ->
+    case maps:get(<<"manifest-request">>, State, false) of
+        Handler when is_map(Handler) -> Handler;
+        _ -> false
+    end.
+
+should_manifest_request(Raw, Opts) ->
+    Request = hb_maps:get(<<"request">>, Raw, #{}, Opts),
+    Method = hb_maps:get(<<"method">>, Request, <<"GET">>, Opts),
+    Path = hb_maps:get(<<"path">>, Request, <<>>, Opts),
+    is_read_method(Method) andalso manifest_candidate_path(Path).
+
+is_read_method(Method) ->
+    case string:uppercase(binary_to_list(hb_util:bin(Method))) of
+        "GET" -> true;
+        "HEAD" -> true;
+        _ -> false
+    end.
+
+manifest_candidate_path(Path0) ->
+    Path = path_only(hb_util:bin(Path0)),
+    case binary:split(trim_leading_slash(Path), <<"/">>) of
+        [<<>>] -> false;
+        [First | _] when ?IS_ID(First) -> true;
+        _ -> false
+    end.
+
+path_only(Path) ->
+    case binary:split(Path, <<"?">>) of
+        [Only] -> Only;
+        [Only, _Query] -> Only
+    end.
+
+trim_leading_slash(<<"/", Rest/binary>>) ->
+    Rest;
+trim_leading_slash(Path) ->
+    Path.
+
+p4_state(State) ->
+    P4Device = maps:get(<<"p4-device">>, State, <<"p4@1.0">>),
+    maps:without(
+        [<<"manifest-request">>, <<"p4-device">>],
+        State#{<<"device">> => P4Device}
+    ).
 
 bundler_gc_hook() ->
     #{
@@ -275,5 +378,7 @@ p4_non_chargable_routes(LedgerID) ->
         #{<<"template">> => <<"/~hyperbuddy@1.0/*">>},
         #{<<"template">> => <<"/graphql">>},
         #{<<"template">> => <<"/schedule">>},
+        #{<<"template">> => <<"/[A-Za-z0-9_-]+">>},
+        #{<<"template">> => <<"/[A-Za-z0-9_-]+/*">>},
         #{<<"template">> => <<"/[A-Za-z0-9_-]+/body">>}
     ].

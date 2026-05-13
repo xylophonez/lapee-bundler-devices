@@ -2,11 +2,12 @@
     <<"data-protocol">> => <<"ao">>,
     <<"type">> => <<"Device-Spec">>,
     <<"name">> => <<"lapee-p4-bootstrap@1.0">>,
-    <<"exports">> => [<<"start">>],
+    <<"exports">> => [<<"start">>, <<"request">>, <<"response">>],
     <<"summary">> =>
         <<"LapEE boot hook that derives the runtime operator payment profile, "
           "installs the AO P4 ledger, and wires request/response/settlement "
-          "hooks for the AO-paid bundler.">>,
+          "hooks for the AO-paid bundler. The request export scopes legacy "
+          "manifest casting behind the single P4-visible request hook.">>,
     <<"configuration">> => #{
         <<"bundler-beneficiary">> =>
             <<"AO recipient for withdrawn bundling fees. Defaults to the "
