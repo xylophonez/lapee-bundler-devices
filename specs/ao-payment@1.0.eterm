@@ -12,7 +12,10 @@
         <<"ao-payment-ledger">> => <<"Local process ledger id.">>,
         <<"ao-payment-deposit-address">> => <<"Accepted payment recipient.">>,
         <<"ao-payment-mainnet-url">> => <<"AO state endpoint.">>,
-        <<"ao-payment-mu-url">> => <<"AO message unit endpoint.">>,
+        <<"ao-payment-submit-url">> =>
+            <<"AO endpoint used to submit withdrawal messages.">>,
+        <<"ao-payment-mu-url">> =>
+            <<"Legacy alias for the AO withdrawal submission endpoint.">>,
         <<"ao-payment-withdraw-secret">> => <<"Private node-local withdrawal guard.">>,
         <<"ao-payment-withdraw-recipient">> => <<"Allowed withdrawal recipient.">>
     }

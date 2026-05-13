@@ -115,6 +115,11 @@ AOToken =
         false -> <<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>;
         RawToken -> list_to_binary(RawToken)
     end.
+AOSubmitURL =
+    case os:getenv("BULBASAUR_AO_SUBMIT_URL") of
+        false -> <<"https://mu.ao-testnet.xyz">>;
+        RawSubmitURL -> list_to_binary(RawSubmitURL)
+    end.
 
 LedgerProcPath =
     case os:getenv("BULBASAUR_LEDGER_PROCESS_FILE") of
@@ -141,6 +146,17 @@ Beneficiary =
     case os:getenv("BULBASAUR_BENEFICIARY") of
         false -> Operator;
         RawBeneficiary -> list_to_binary(RawBeneficiary)
+    end.
+WithdrawEnabled =
+    case os:getenv("BULBASAUR_WITHDRAW") of
+        "true" -> true;
+        "1" -> true;
+        _ -> false
+    end.
+WithdrawSecret =
+    case os:getenv("BULBASAUR_WITHDRAW_SECRET") of
+        false -> hb_util:encode(crypto:strong_rand_bytes(32));
+        RawWithdrawSecret -> list_to_binary(RawWithdrawSecret)
     end.
 InitialBalance =
     case {os:getenv("BULBASAUR_INITIAL_BALANCE_ADDRESS"), os:getenv("BULBASAUR_INITIAL_BALANCE")} of
@@ -298,14 +314,17 @@ DeviceNameResolver =
 NameResolvers =
     [DeviceNameResolver |
         hb_opts:get(name_resolvers, [], hb_opts:default_message())].
-PreloadedDevices = [
+DefaultPreloadedDevices =
+    hb_opts:get(preloaded_devices, [], hb_opts:default_message()),
+PackagedPreloadedDevices = [
     #{
         <<"name">> => maps:get(<<"name">>, Entry),
         <<"module">> => maps:get(<<"spec-id">>, Entry)
     }
 ||
     Entry <- PublishedDevices
-].
+],
+PreloadedDevices = PackagedPreloadedDevices ++ DefaultPreloadedDevices.
 
 DeviceNames = [
     maps:get(<<"name">>, Entry)
@@ -356,6 +375,11 @@ BundlerSettlement =
         <<"ledger-path">> => LedgerPath,
         <<"settlement-account">> => Operator,
         <<"beneficiary">> => Beneficiary,
+        <<"withdraw">> => WithdrawEnabled,
+        <<"withdraw-device">> => <<"ao-payment@1.0">>,
+        <<"withdraw-token">> => AOToken,
+        <<"withdraw-recipient">> => Beneficiary,
+        <<"withdrawal-account">> => AOToken,
         <<"hook">> => #{ <<"result">> => <<"ignore">> }
     }.
 
@@ -372,7 +396,7 @@ P4NonChargableRoutes = [
     #{ <<"template">> => <<"/[A-Za-z0-9_-]+/body">> }
 ].
 
-Opts =
+OptsBase =
     #{
         port => Port,
         <<"port">> => Port,
@@ -430,6 +454,10 @@ Opts =
         <<"ao-payment-node">> => <<"http://localhost:", (integer_to_binary(Port))/binary>>,
         ao_payment_mainnet_url => <<"https://state.forward.computer">>,
         <<"ao-payment-mainnet-url">> => <<"https://state.forward.computer">>,
+        ao_payment_submit_url => AOSubmitURL,
+        <<"ao-payment-submit-url">> => AOSubmitURL,
+        ao_payment_withdraw_recipient => Beneficiary,
+        <<"ao-payment-withdraw-recipient">> => Beneficiary,
         router_opts => #{
             <<"offered">> => [
                 #{
@@ -485,6 +513,18 @@ Opts =
             <<"bundled-message-complete">> => BundlerSettlement
         }
     }.
+Opts =
+    case WithdrawEnabled of
+        true ->
+            hb_private:set(
+                OptsBase,
+                <<"ao-payment-withdraw-secret">>,
+                WithdrawSecret,
+                OptsBase
+            );
+        false ->
+            OptsBase
+    end.
 
 Node = hb_http_server:start_node(Opts).
 {ok, _LedgerScheduleRes} = hb_http:post(Node, <<"/schedule">>, LedgerProc, Opts).
@@ -544,6 +584,7 @@ io:format(
     "~nBulbasaur paid-process node started at ~s~n"
     "Operator: ~s~n"
     "Bundler beneficiary: ~s~n"
+    "Bundler withdrawal: ~p~n"
     "Wallet: ~s~n"
     "Device package: ~s~n"
     "Device signer: ~s~n"
@@ -559,6 +600,7 @@ io:format(
     "Arweave block copycat depth: ~p block(s)~n"
     "Arweave block copycat worker: ~p~n"
     "AO root token: ~s~n"
+    "AO submit URL: ~s~n"
     "Ledger process file: ~s~n"
     "Ledger process ID: ~s~n"
     "AO deposit address: ~s~n"
@@ -568,6 +610,7 @@ io:format(
         Node,
         Operator,
         Beneficiary,
+        WithdrawEnabled,
         WalletPath,
         DeviceDir,
         Operator,
@@ -582,6 +625,7 @@ io:format(
         ArweaveBlockCopycatDepth,
         ArweaveBlockCopycatWorker,
         AOToken,
+        AOSubmitURL,
         LedgerProcPath,
         LedgerProcessID,
         Operator,

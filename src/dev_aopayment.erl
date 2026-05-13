@@ -16,7 +16,7 @@
 
 -define(DEFAULT_AO_TOKEN, <<"0syT13r0s0tgPmIed95bJnuSqaD29HQNN8D3ElLSrsc">>).
 -define(DEFAULT_MAINNET_URL, <<"https://state.forward.computer">>).
--define(DEFAULT_MU_URL, <<"https://mu.ao-testnet.xyz">>).
+-define(DEFAULT_SUBMIT_URL, <<"https://mu.ao-testnet.xyz">>).
 
 %% @doc Verify and import an AO token payment into the local ledger.
 ingest(Base, Req, NodeMsg) ->
@@ -355,7 +355,7 @@ validate_withdrawal_fields(Base, Req, NodeMsg) ->
                         <<"recipient">> => hb_util:human_id(Recipient),
                         <<"quantity">> => Quantity,
                         <<"withdraw-id">> => WithdrawID,
-                        <<"mu-url">> => mu_url(Base, NodeMsg)
+                        <<"submit-url">> => submit_url(Base, NodeMsg)
                     }};
                 false ->
                     withdraw_error(
@@ -399,7 +399,8 @@ submit_withdrawal(Withdrawal, NodeMsg) ->
         hb_message:commit(
             #{
                 <<"target">> => Token,
-                <<"data">> => <<" ">>,
+                <<"data">> => <<"1984">>,
+                <<"Data-Protocol">> => <<"ao">>,
                 <<"Variant">> => <<"ao.TN.1">>,
                 <<"Type">> => <<"Message">>,
                 <<"Action">> => <<"Transfer">>,
@@ -412,54 +413,62 @@ submit_withdrawal(Withdrawal, NodeMsg) ->
             <<"ans104@1.0">>
         ),
     MessageID = hb_message:id(Msg, signed, Opts),
-    case dev_codec_ans104:serialize(Msg, #{}, Opts) of
-        {ok, Raw} ->
-            case post_mu(hb_maps:get(<<"mu-url">>, Withdrawal, ?DEFAULT_MU_URL, NodeMsg), Raw) of
-                {ok, MuResult} ->
-                    {ok, #{
-                        <<"message-id">> => MessageID,
-                        <<"token">> => Token,
-                        <<"recipient">> => Recipient,
-                        <<"quantity">> => Quantity,
-                        <<"mu-response">> => MuResult
-                    }};
-                {error, Reason} ->
-                    withdraw_fetch_error(Reason)
-            end;
+    case post_legacy_mu(
+        hb_maps:get(<<"submit-url">>, Withdrawal, ?DEFAULT_SUBMIT_URL, NodeMsg),
+        Msg,
+        Opts
+    ) of
+        {ok, SubmitResult} ->
+            {ok, #{
+                <<"message-id">> => MessageID,
+                <<"token">> => Token,
+                <<"recipient">> => Recipient,
+                <<"quantity">> => Quantity,
+                <<"submit-response">> => SubmitResult
+            }};
         {error, Reason} ->
             withdraw_fetch_error(Reason)
     end.
 
-post_mu(MuURL0, Raw) ->
-    MuURL = normalize_url(MuURL0),
+post_legacy_mu(SubmitURL0, Msg, Opts) ->
+    SubmitURL = normalize_url(SubmitURL0),
+    Item = hb_message:convert(Msg, <<"ans104@1.0">>, Opts),
+    Body = ar_bundles:serialize(Item),
+    application:ensure_all_started(inets),
+    application:ensure_all_started(ssl),
     Request = {
-        binary_to_list(MuURL),
-        [
-            {"content-type", "application/octet-stream"},
-            {"accept", "application/json"}
-        ],
+        binary_to_list(SubmitURL),
+        [{"accept", "application/json"}],
         "application/octet-stream",
-        Raw
+        Body
     },
     case httpc:request(post, Request, [], [{body_format, binary}]) of
-        {ok, {{_, Status, _}, _Headers, Body}} when Status >= 200, Status < 300 ->
-            {ok, decode_json_or_body(Body)};
-        {ok, {{_, Status, _}, _Headers, Body}} ->
-            {error, {http_status, Status, Body}};
+        {ok, {{_, Status, _}, _Headers, ResponseBody}}
+                when Status >= 200, Status < 300 ->
+            {ok, #{
+                <<"status">> => Status,
+                <<"body">> => ResponseBody
+            }};
+        {ok, {{_, Status, _}, _Headers, ResponseBody}} ->
+            {error, #{
+                <<"status">> => Status,
+                <<"body">> => ResponseBody
+            }};
         {error, Reason} ->
             {error, Reason}
     end.
 
-decode_json_or_body(Body) ->
-    try hb_json:decode(Body)
-    catch _:_ -> Body
-    end.
-
-mu_url(Base, NodeMsg) ->
+submit_url(Base, NodeMsg) ->
+    Configured =
+        hb_opts:get(
+            ao_payment_submit_url,
+            hb_opts:get(ao_payment_mu_url, ?DEFAULT_SUBMIT_URL, NodeMsg),
+            NodeMsg
+        ),
     hb_maps:get(
-        <<"mu-url">>,
+        <<"submit-url">>,
         Base,
-        hb_opts:get(ao_payment_mu_url, ?DEFAULT_MU_URL, NodeMsg),
+        hb_maps:get(<<"mu-url">>, Base, Configured, NodeMsg),
         NodeMsg
     ).
 
@@ -486,7 +495,7 @@ withdraw_error(Status, Body) ->
 withdraw_fetch_error(Reason) ->
     {error, #{
         <<"status">> => 502,
-        <<"body">> => <<"Unable to submit AO withdrawal to message unit.">>,
+        <<"body">> => <<"Unable to submit AO withdrawal to AO endpoint.">>,
         <<"reason">> => format_reason(Reason)
     }}.
 
@@ -630,6 +639,84 @@ credit_to_payment_rejects_requested_recipient_mismatch_test() ->
         {error, #{ <<"status">> := 400 }},
         credit_to_payment(Credit, Expected, #{})
     ).
+
+withdraw_posts_legacy_mu_test_() ->
+    {timeout, 30, fun() ->
+        {ok, _} = application:ensure_all_started(hackney),
+        ok = hb_http:start(),
+        ok = hb_http_client:init_prometheus(),
+        Token = hb_util:encode(crypto:strong_rand_bytes(32)),
+        Recipient = hb_util:encode(crypto:strong_rand_bytes(32)),
+        Store = hb_test_utils:test_store(),
+        Wallet = ar_wallet:new(),
+        Opts0 = #{
+            store => Store,
+            <<"store">> => Store,
+            priv_wallet => Wallet,
+            <<"priv-wallet">> => Wallet
+        },
+        {ok, SubmitURL, MockHandle} =
+            hb_mock_server:start([
+                {
+                    "/",
+                    submit,
+                    {202, <<"{\"message\":\"Processing DataItem\"}">>}
+                }
+            ]),
+        NodeMsg = Opts0,
+        try
+            {ok, Result} =
+                submit_withdrawal(
+                    #{
+                        <<"token">> => Token,
+                        <<"recipient">> => Recipient,
+                        <<"quantity">> => 7,
+                        <<"withdraw-id">> => <<"test-withdrawal">>,
+                        <<"submit-url">> => SubmitURL
+                    },
+                    NodeMsg
+                ),
+            [Captured] = hb_mock_server:get_requests(submit, 1, MockHandle),
+            Headers = hb_maps:get(<<"headers">>, Captured, #{}, #{}),
+            ?assertEqual(
+                <<"application/octet-stream">>,
+                hb_maps:get(<<"content-type">>, Headers, undefined, #{})
+            ),
+            RawTX =
+                ar_bundles:deserialize(
+                    hb_maps:get(<<"body">>, Captured, undefined, #{})
+                ),
+            RawTags = RawTX#tx.tags,
+            ?assert(lists:member({<<"Data-Protocol">>, <<"ao">>}, RawTags)),
+            ?assert(lists:member({<<"Variant">>, <<"ao.TN.1">>}, RawTags)),
+            ?assert(lists:member({<<"Type">>, <<"Message">>}, RawTags)),
+            ?assert(lists:member({<<"Action">>, <<"Transfer">>}, RawTags)),
+            ?assert(lists:member({<<"Recipient">>, Recipient}, RawTags)),
+            ?assert(lists:member({<<"Quantity">>, <<"7">>}, RawTags)),
+            Submitted =
+                hb_util:ok(
+                    dev_codec_ans104:deserialize(
+                        hb_maps:get(<<"body">>, Captured, undefined, #{}),
+                        #{},
+                        NodeMsg
+                    )
+                ),
+            ?assert(hb_message:verify(Submitted, all, NodeMsg)),
+            ?assertEqual(Token, hb_maps:get(<<"target">>, Submitted, undefined, NodeMsg)),
+            ?assertEqual(<<"ao">>, hb_maps:get(<<"data-protocol">>, Submitted, undefined, NodeMsg)),
+            ?assertEqual(<<"ao.TN.1">>, hb_maps:get(<<"variant">>, Submitted, undefined, NodeMsg)),
+            ?assertEqual(<<"Message">>, hb_maps:get(<<"type">>, Submitted, undefined, NodeMsg)),
+            ?assertEqual(<<"Transfer">>, hb_maps:get(<<"action">>, Submitted, undefined, NodeMsg)),
+            ?assertEqual(Recipient, hb_maps:get(<<"recipient">>, Submitted, undefined, NodeMsg)),
+            ?assertEqual(<<"7">>, hb_maps:get(<<"quantity">>, Submitted, undefined, NodeMsg)),
+            ?assertEqual(
+                hb_message:id(Submitted, signed, NodeMsg),
+                hb_maps:get(<<"message-id">>, Result, undefined, NodeMsg)
+            )
+        after
+            hb_mock_server:stop(MockHandle)
+        end
+    end}.
 
 payment_expected(RequestedRecipient) ->
     #{

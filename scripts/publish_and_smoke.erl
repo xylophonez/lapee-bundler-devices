@@ -102,8 +102,15 @@ Publish =
     end.
 
 Published = [Publish(Device) || Device <- Devices].
+SpecIDByName =
+    maps:from_list([
+        {maps:get(<<"name">>, Entry), maps:get(<<"spec-id">>, Entry)}
+    ||
+        Entry <- Published
+    ]).
 
 Gateway = hb_http_server:start_node(Opts0).
+ServerOpts = hb_http_server:get_opts(#{ <<"http-server">> => Signer }).
 Routes = [
     #{
         <<"template">> => <<"/graphql">>,
@@ -117,7 +124,7 @@ Routes = [
         }
     }
 ].
-Opts = Opts0#{ <<"routes">> => Routes }.
+Opts = ServerOpts#{ <<"routes">> => Routes }.
 
 LoadAndSmoke =
     fun(Entry) ->
@@ -151,19 +158,108 @@ LoadAndSmoke =
                         ),
                     ok;
                 <<"bundler-settlement@1.0">> ->
+                    AoPaymentSpecID = maps:get(<<"ao-payment@1.0">>, SpecIDByName),
+                    Token = hb_util:encode(crypto:strong_rand_bytes(32)),
+                    Recipient = hb_util:encode(crypto:strong_rand_bytes(32)),
+                    Secret = hb_util:encode(crypto:strong_rand_bytes(32)),
+                    {ok, SubmitURL, MockHandle} =
+                        hb_mock_server:start([
+                            {
+                                "/",
+                                submit,
+                                {202, <<"{\"message\":\"Processing DataItem\"}">>}
+                            }
+                        ]),
                     {ok, #{ <<"bundled-size">> := 128 }} =
-                        hb_ao:resolve(
-                            #{
-                                <<"device">> => SpecID,
-                                <<"pricing-device">> =>
-                                    #{ quote => fun(_Base, _Req, _NodeMsg) -> {ok, 0} end }
-                            },
-                            #{
-                                <<"path">> => <<"bundle-complete">>,
-                                <<"bundled-size">> => 128
-                            },
-                            Opts
-                        ),
+                        try
+                            WithdrawOpts =
+                                hb_private:set(
+                                    Opts,
+                                    <<"ao-payment-withdraw-secret">>,
+                                    Secret,
+                                    Opts
+                                ),
+                            {ok, SettlementResult} =
+                                hb_ao:resolve(
+                                    #{
+                                        <<"device">> => SpecID,
+                                        <<"ledger-device">> =>
+                                            #{
+                                                charge =>
+                                                    fun(_Base, _Req, _NodeMsg) ->
+                                                        {ok, #{}}
+                                                    end
+                                            },
+                                        <<"pricing-device">> =>
+                                            #{
+                                                quote =>
+                                                    fun(_Base, _Req, _NodeMsg) ->
+                                                        {ok, 7}
+                                                    end
+                                            },
+                                        <<"beneficiary">> => Recipient,
+                                        <<"withdraw">> => true,
+                                        <<"withdraw-device">> => AoPaymentSpecID,
+                                        <<"withdraw-token">> => Token,
+                                        <<"withdraw-recipient">> => Recipient,
+                                        <<"withdrawal-account">> => Token,
+                                        <<"submit-url">> => SubmitURL
+                                    },
+                                    #{
+                                        <<"path">> => <<"bundle-complete">>,
+                                        <<"bundled-size">> => 128
+                                    },
+                                    WithdrawOpts
+                                ),
+                            [Captured] =
+                                hb_mock_server:get_requests(submit, 1, MockHandle),
+                            Headers = hb_maps:get(<<"headers">>, Captured, #{}, #{}),
+                            <<"application/octet-stream">> =
+                                hb_maps:get(
+                                    <<"content-type">>,
+                                    Headers,
+                                    undefined,
+                                    #{}
+                                ),
+                            Submitted =
+                                hb_util:ok(
+                                    dev_codec_ans104:deserialize(
+                                        hb_maps:get(
+                                            <<"body">>,
+                                            Captured,
+                                            undefined,
+                                            #{}
+                                        ),
+                                        #{},
+                                        WithdrawOpts
+                                    )
+                                ),
+                            true = hb_message:verify(Submitted, all, WithdrawOpts),
+                            Token =
+                                hb_maps:get(
+                                    <<"target">>,
+                                    Submitted,
+                                    undefined,
+                                    WithdrawOpts
+                                ),
+                            Recipient =
+                                hb_maps:get(
+                                    <<"recipient">>,
+                                    Submitted,
+                                    undefined,
+                                    WithdrawOpts
+                                ),
+                            <<"7">> =
+                                hb_maps:get(
+                                    <<"quantity">>,
+                                    Submitted,
+                                    undefined,
+                                    WithdrawOpts
+                                ),
+                            {ok, SettlementResult}
+                        after
+                            hb_mock_server:stop(MockHandle)
+                        end,
                     ok;
                 <<"pricing-router@1.0">> ->
                     {ok, <<"routed">>} =

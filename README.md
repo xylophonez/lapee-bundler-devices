@@ -61,6 +61,12 @@ Useful environment:
 - `BULBASAUR_DEVICE_DIR` / `LAPEE_DEVICE_DIR`: device package repo. Defaults to this repo.
 - `HB_PORT`: node port. Defaults to `8734`.
 - `HB_KEY`: node wallet path. Defaults to `bulbasaur-wallet.json` under `HYPERBEAM_DIR`.
+- `BULBASAUR_AO_SUBMIT_URL`: AO submit endpoint used for withdrawal messages.
+  Defaults to `https://mu.ao-testnet.xyz`.
+- `BULBASAUR_WITHDRAW`: set to `true` or `1` to withdraw settled AO from the
+  node wallet to `BULBASAUR_BENEFICIARY`.
+- `BULBASAUR_WITHDRAW_SECRET`: node-local withdrawal guard used when
+  `BULBASAUR_WITHDRAW` is enabled. Defaults to a random per-run value.
 - `BULBASAUR_ARWEAVE_COPYCAT_MODE`: defaults to `mempool-sender`; set `block`
   for older HyperBEAM checkouts without mempool copycat support.
 - `BULBASAUR_ARWEAVE_COPYCAT_PATH`: explicit copycat path override.
