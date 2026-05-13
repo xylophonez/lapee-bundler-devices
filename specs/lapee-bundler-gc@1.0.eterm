@@ -1,0 +1,13 @@
+#{
+    <<"data-protocol">> => <<"ao">>,
+    <<"type">> => <<"Device-Spec">>,
+    <<"name">> => <<"lapee-bundler-gc@1.0">>,
+    <<"exports">> => [<<"bundled-message-complete">>, <<"status">>],
+    <<"summary">> =>
+        <<"LapEE bundler completion hook that schedules delayed deletion of "
+          "completed item cache entries from delete-capable local stores.">>,
+    <<"configuration">> => #{
+        <<"lapee-bundler-completed-item-retention-ms">> =>
+            <<"Delay before completed-item cache paths are purged.">>
+    }
+}.

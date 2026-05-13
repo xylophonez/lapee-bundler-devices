@@ -243,6 +243,7 @@ Devices = [
     #{ name => <<"ao-payment@1.0">>, root => dev_aopayment },
     #{ name => <<"arweave-byte-pricing@1.0">>, root => dev_arweave_byte_pricing },
     #{ name => <<"bundler-settlement@1.0">>, root => dev_bundler_settlement },
+    #{ name => <<"lapee-bundler-gc@1.0">>, root => dev_lapee_bundler_gc },
     #{ name => <<"pricing-router@1.0">>, root => dev_pricing_router },
     #{ name => <<"process-ledger@1.0">>, root => dev_process_ledger },
     #{ name => <<"simple-oracle@1.0">>, root => dev_simple_oracle }
@@ -383,6 +384,12 @@ BundlerSettlement =
         <<"hook">> => #{ <<"result">> => <<"ignore">> }
     }.
 
+BundlerGC =
+    #{
+        <<"device">> => <<"lapee-bundler-gc@1.0">>,
+        <<"hook">> => #{ <<"result">> => <<"ignore">> }
+    }.
+
 P4NonChargableRoutes = [
     #{ <<"template">> => <<"/*~node-process@1.0/*">> },
     #{ <<"template">> => << LedgerPath/binary, "/*" >> },
@@ -505,12 +512,12 @@ OptsBase =
         on => #{
             <<"request">> => Processor,
             <<"response">> => Processor,
-            <<"bundled-message-complete">> => BundlerSettlement
+            <<"bundled-message-complete">> => [BundlerSettlement, BundlerGC]
         },
         <<"on">> => #{
             <<"request">> => Processor,
             <<"response">> => Processor,
-            <<"bundled-message-complete">> => BundlerSettlement
+            <<"bundled-message-complete">> => [BundlerSettlement, BundlerGC]
         }
     }.
 Opts =
